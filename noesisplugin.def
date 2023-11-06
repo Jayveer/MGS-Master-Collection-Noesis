@@ -1,0 +1,6 @@
+LIBRARY mgs_master_collection_mdl
+EXPORTS
+	NPAPI_Init
+	NPAPI_Shutdown
+	NPAPI_GetPluginVer
+	NPAPI_GetPluginInfo
