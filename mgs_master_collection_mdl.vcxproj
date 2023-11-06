@@ -164,6 +164,7 @@
     <ClInclude Include="mat.h" />
     <ClInclude Include="mesh.h" />
     <ClInclude Include="mgs\common\fileutil.h" />
+    <ClInclude Include="mgs\common\strcode.h" />
     <ClInclude Include="mgs\common\util.h" />
     <ClInclude Include="mgs\model\mdl\mdl.h" />
     <ClInclude Include="mgs\motion\mtar\mtar.h" />

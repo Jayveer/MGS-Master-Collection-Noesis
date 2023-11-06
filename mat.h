@@ -31,6 +31,8 @@ std::string findTri(noeRAPI_t* rapi, uint32_t& strcode)
     p = p.parent_path();
     std::filesystem::path tri{ p.string() + "\\tri"};
 
+    if (!std::filesystem::exists(tri)) return "";
+
     for (const std::filesystem::directory_entry& file : std::filesystem::recursive_directory_iterator(tri))
     {
         if (file.path().extension() == ".tri")
