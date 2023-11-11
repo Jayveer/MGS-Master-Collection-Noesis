@@ -450,13 +450,15 @@ void loadMotion(noeRAPI_t* rapi, BYTE* motionFile, modelBone_t* noeBones, int nu
 
     if (mtarHeader->maxJoint > numBones) return;
 
-    mtarHeader->resvBoneTableOffset = 0x20;
+    mtarHeader->resvBoneTableOffset = 0x30;
     mtarHeader->resvUnknownOffset = mtarHeader->resvBoneTableOffset + (mtarHeader->maxJoint * 4);
     mtarHeader->resvDataTableOffset = mtarHeader->resvUnknownOffset + (mtarHeader->maxJoint * 4);
 
     uint8_t  *mtcm      = (uint8_t*) &motionFile[mtarHeader->mtcmOffset];
     uint32_t *boneTable = (uint32_t*)&motionFile[mtarHeader->resvBoneTableOffset];
-    MtarData *mtcmTable = (MtarData*)&motionFile[mtarHeader->resvDataTableOffset + 0x18];
+
+    int align = getAlignment(mtarHeader->resvDataTableOffset, 0x10);
+    MtarData *mtcmTable = (MtarData*)&motionFile[mtarHeader->resvDataTableOffset + align];
 
     CArrayList<noesisAnim_t*> animList;
 
