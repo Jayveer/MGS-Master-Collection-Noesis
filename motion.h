@@ -118,7 +118,7 @@ std::vector<RotAnimation> readRotBitstream(uint16_t* rotBitStream, const int& si
     std::vector<RotAnimation> ra;
     RichBitStream bs = RichBitStream(rotBitStream, size * 2);
 
-    while (keyFrame < numFrames)
+    while (keyFrame < numFrames && bs.GetOffset() < size * 2)
     {
         keyFrame += bs.ReadBits(8);
 
@@ -232,7 +232,7 @@ int determineArchiveSize(uint8_t* mtcm, int i)
 
     int nextOffset = (i == mtcmHeader->numJoints - 1) ? mtcmHeader->rootOffset : mtcmHeader->quatOffset[i + 1];
     int size = nextOffset - rotOffset;
-    return size <= 0 ? mtcmHeader->rootOffset - rotOffset : size;
+    return size;
 }
 
 inline
@@ -369,7 +369,8 @@ noesisAnim_t* bindMtcm(uint8_t* mtcm, uint32_t* boneTable, noeRAPI_t* rapi, mode
 
     RichBitStream bs = RichBitStream(&mtcmHeader->bitCheck0, 128);
 
-    for (int j = 0; j < mtcmHeader->numJoints; j++) {
+    for (int j = 0; j < mtcmHeader->numJoints; j++)
+    {
         int check = bs.ReadBits(1);
         std::vector<RotAnimation>  rot;
         std::vector<MoveAnimation> trans;
@@ -402,7 +403,8 @@ noesisAnim_t* bindMtcm(uint8_t* mtcm, uint32_t* boneTable, noeRAPI_t* rapi, mode
 }
 
 inline
-noesisAnim_t* bindMarMtcm(uint8_t* mtcm, noeRAPI_t* rapi, modelBone_t* noeBones, int numBones) {
+noesisAnim_t* bindMarMtcm(uint8_t* mtcm, noeRAPI_t* rapi, modelBone_t* noeBones, int numBones)
+{
     MarMtcmHeader* mtcmHeader = (MarMtcmHeader*)mtcm;
 
     uint8_t* mtcmArchive = &mtcm[mtcmHeader->archiveOffset];
