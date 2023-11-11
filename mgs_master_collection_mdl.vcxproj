@@ -166,7 +166,11 @@
     <ClInclude Include="mgs\common\fileutil.h" />
     <ClInclude Include="mgs\common\strcode.h" />
     <ClInclude Include="mgs\common\util.h" />
+    <ClInclude Include="mgs\model\cmdl\cmdl.h" />
+    <ClInclude Include="mgs\model\evm\evm.h" />
+    <ClInclude Include="mgs\model\kms\kms.h" />
     <ClInclude Include="mgs\model\mdl\mdl.h" />
+    <ClInclude Include="mgs\model\model.h" />
     <ClInclude Include="mgs\motion\mtar\mtar.h" />
     <ClInclude Include="mgs\motion\mtar\mtcm.h" />
     <ClInclude Include="mgs\texture\tri.h" />

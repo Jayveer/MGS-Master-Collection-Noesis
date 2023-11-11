@@ -112,5 +112,20 @@
     <ClInclude Include="mgs\texture\tri.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="mgs\common\strcode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mgs\model\cmdl\cmdl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mgs\model\kms\kms.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mgs\model\model.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mgs\model\evm\evm.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
