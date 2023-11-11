@@ -6,8 +6,8 @@
 
 #include "include/half/half.h"
 
-const double g_mgs3mc_PI = acos(-1);
-const float  g_mgs3mc_GAME_FRAMERATE = 30.0f;
+const double g_mgsmc_PI = acos(-1);
+const float  g_mgsmc_GAME_FRAMERATE = 30.0f;
 
 struct MoveAnimation
 {
@@ -54,7 +54,7 @@ inline
 bool checkMagic(BYTE* motionFile)
 {
     MtarHeader* header = (MtarHeader*)motionFile;
-    return header->magic == 0x7261744D;
+    return header->magic == 0x7261744D || header->magic == 0x6152414D;
 }
 
 inline
@@ -63,6 +63,16 @@ BYTE* openMotion(noeRAPI_t* rapi)
     int len;
     char out[MAX_NOESIS_PATH];
     BYTE* mtarFile = rapi->Noesis_LoadPairedFile("load mtar", ".mtar", len, out);
+    if (!mtarFile) return NULL;
+    return checkMagic(mtarFile) ? mtarFile : NULL;
+}
+
+inline
+BYTE* openMarMotion(noeRAPI_t* rapi)
+{
+    int len;
+    char out[MAX_NOESIS_PATH];
+    BYTE* mtarFile = rapi->Noesis_LoadPairedFile("load mar", ".mar", len, out);
     if (!mtarFile) return NULL;
     return checkMagic(mtarFile) ? mtarFile : NULL;
 }
@@ -83,6 +93,24 @@ RichQuat angleAxisToQuat(const float& angle, RichVec3 axis)
     return quat;
 }
 
+RichQuat int16ToQuat(int16_t& x, int16_t& y, int16_t& z, int16_t& w)
+{
+    if (x & 0x800) { x |= -0x1000; }
+    if (y & 0x800) { y |= -0x1000; }
+    if (z & 0x800) { z |= -0x1000; }
+    if (w & 0x800) { w |= -0x1000; }
+
+    float fx = x / 2047.0f;
+    float fy = y / 2047.0f;
+    float fz = z / 2047.0f;
+    float fw = w / 2047.0f;
+
+    RichQuat qt = { fx, fy, fz, fw };
+    qt.Normalize();
+
+    return qt;
+}
+
 inline
 std::vector<RotAnimation> readRotBitstream(uint16_t* rotBitStream, const int& size, const int& quatLength, const uint32_t& numFrames)
 {
@@ -94,7 +122,7 @@ std::vector<RotAnimation> readRotBitstream(uint16_t* rotBitStream, const int& si
     {
         keyFrame += bs.ReadBits(8);
 
-        float theta = shiftRadix(bs.ReadBits(quatLength), -quatLength) * g_mgs3mc_PI;
+        float theta = shiftRadix(bs.ReadBits(quatLength), -quatLength) * g_mgsmc_PI;
         float axisX = shiftRadix(bs.ReadBits(quatLength), -quatLength);
         float axisY = shiftRadix(bs.ReadBits(quatLength), -quatLength);
 
@@ -111,6 +139,35 @@ std::vector<RotAnimation> readRotBitstream(uint16_t* rotBitStream, const int& si
         RichQuat qt = angleAxisToQuat(theta, { axisX, axisY, axisZ });
 
         ra.push_back({ keyFrame, qt[0], qt[1], qt[2], qt[3] });
+    }
+
+    return ra;
+}
+
+inline
+std::vector<RotAnimation> readMarRotBitstream(uint16_t* rotBitStream, const int& size, const int& quatLength, const uint32_t& numFrames)
+{
+    int keyFrame = 0;
+    std::vector<RotAnimation> ra;
+    RichBitStream bs = RichBitStream(rotBitStream, size * 2);
+
+    while (keyFrame < numFrames)
+    {
+        keyFrame += bs.ReadBits(8);
+
+        int16_t x = bs.ReadBits(12);
+        int16_t y = bs.ReadBits(12);
+        int16_t z = bs.ReadBits(12);
+        int16_t w = bs.ReadBits(12);
+
+        RichQuat qt = int16ToQuat(x, y, z, w);
+        ra.push_back({ keyFrame, qt[0], qt[1], qt[2], qt[3] });
+
+        //I think this is for interpolation (mid this frame and next) but I'll let noesis handle that
+        x = bs.ReadBits(12);
+        y = bs.ReadBits(12);
+        z = bs.ReadBits(12);
+        w = bs.ReadBits(12);
     }
 
     return ra;
@@ -136,9 +193,52 @@ std::vector<MoveAnimation> readMoveBitstream(uint16_t* moveBitStream, const int&
 }
 
 inline
+std::vector<MoveAnimation> readMarMoveBitstream(uint16_t* moveBitStream, const int& size, const uint32_t& numFrames)
+{
+    int keyFrame = 0;
+    std::vector<MoveAnimation> ma;
+    RichBitStream bs = RichBitStream(moveBitStream, size * 2);
+
+    float x = short2HalfExp(bs.ReadBits(16));
+    float y = short2HalfExp(bs.ReadBits(16));
+    float z = short2HalfExp(bs.ReadBits(16));
+
+    ma.push_back({ 0, x , y, z });
+
+    while (keyFrame < numFrames) {
+
+        keyFrame += bs.ReadBits(8);
+
+        x = short2HalfExp(bs.ReadBits(16));
+        y = short2HalfExp(bs.ReadBits(16));
+        z = short2HalfExp(bs.ReadBits(16));
+
+        ma.push_back({ keyFrame, x , y, z });
+
+        //I think this is for interpolation (mid this frame and next) but I'll let noesis handle that
+        x = short2HalfExp(bs.ReadBits(16));
+        y = short2HalfExp(bs.ReadBits(16));
+        z = short2HalfExp(bs.ReadBits(16));
+    }
+
+    return ma;
+}
+
+inline
 int determineArchiveSize(uint8_t* mtcm, int i)
 {
     MtcmHeader* mtcmHeader = (MtcmHeader*)mtcm;
+    int rotOffset = mtcmHeader->quatOffset[i];
+
+    int nextOffset = (i == mtcmHeader->numJoints - 1) ? mtcmHeader->rootOffset : mtcmHeader->quatOffset[i + 1];
+    int size = nextOffset - rotOffset;
+    return size <= 0 ? mtcmHeader->rootOffset - rotOffset : size;
+}
+
+inline
+int determineMarArchiveSize(uint8_t* mtcm, int i)
+{
+    MarMtcmHeader* mtcmHeader = (MarMtcmHeader*)mtcm;
     int rotOffset = mtcmHeader->quatOffset[i];
 
     int nextOffset = (i == mtcmHeader->numJoints - 1) ? mtcmHeader->rootOffset : mtcmHeader->quatOffset[i + 1];
@@ -151,7 +251,7 @@ noeKeyFrameData_t createTransKFData(const MoveAnimation& trans, std::vector<floa
 {
     noeKeyFrameData_t data = {};
     data.dataIndex = aniData.size();
-    data.time = trans.keyframe / g_mgs3mc_GAME_FRAMERATE;
+    data.time = trans.keyframe / g_mgsmc_GAME_FRAMERATE;
 
     aniData.push_back(trans.x);
     aniData.push_back(trans.y);
@@ -165,7 +265,7 @@ noeKeyFrameData_t createRotKFData(const RotAnimation& rot, std::vector<float>& a
 {
     noeKeyFrameData_t data = {};
     data.dataIndex = aniData.size();
-    data.time = rot.keyframe / g_mgs3mc_GAME_FRAMERATE;
+    data.time = rot.keyframe / g_mgsmc_GAME_FRAMERATE;
 
     RichQuat quat = { rot.x, rot.y, rot.z, rot.w };
     quat.Transpose();
@@ -223,7 +323,7 @@ noeKeyFramedBone_t createKFBone(uint32_t boneID, modelBone_t* noeBones, int numB
     kfBone.numRotationKeys = rot.size();
     kfBone.numTranslationKeys = trans.size();
 
-    kfBone.maxTime = numFrames / g_mgs3mc_GAME_FRAMERATE;
+    kfBone.maxTime = numFrames / g_mgsmc_GAME_FRAMERATE;
 
     std::vector<noeKeyFrameData_t> nkfData = createKFData(trans, rot, scale, aniData);
     kfData.push_back(nkfData);
@@ -232,8 +332,8 @@ noeKeyFramedBone_t createKFBone(uint32_t boneID, modelBone_t* noeBones, int numB
     int rotPos = (trans.size());
     int scalePos = (trans.size() + rot.size());
 
-    if (kfBone.numScaleKeys)        kfBone.scaleKeys = &kfData[kfData.size() - 1][scalePos];
-    if (kfBone.numRotationKeys)     kfBone.rotationKeys = &kfData[kfData.size() - 1][rotPos];
+    if (kfBone.numScaleKeys)        kfBone.scaleKeys       = &kfData[kfData.size() - 1][scalePos];
+    if (kfBone.numRotationKeys)     kfBone.rotationKeys    = &kfData[kfData.size() - 1][rotPos];
     if (kfBone.numTranslationKeys)  kfBone.translationKeys = &kfData[kfData.size() - 1][transPos];
 
     return kfBone;
@@ -248,7 +348,7 @@ noeKeyFramedAnim_t createKFAnim(char* animName, modelBone_t* noeBones, int numBo
     kfAnim.numKfBones = kfBones.size();
     kfAnim.kfBones = kfBones.data();
     kfAnim.numBones = numBones;
-    kfAnim.framesPerSecond = g_mgs3mc_GAME_FRAMERATE;
+    kfAnim.framesPerSecond = g_mgsmc_GAME_FRAMERATE;
 
     kfAnim.data = data.data();
     kfAnim.numDataFloats = data.size();
@@ -302,6 +402,46 @@ noesisAnim_t* bindMtcm(uint8_t* mtcm, uint32_t* boneTable, noeRAPI_t* rapi, mode
 }
 
 inline
+noesisAnim_t* bindMarMtcm(uint8_t* mtcm, noeRAPI_t* rapi, modelBone_t* noeBones, int numBones) {
+    MarMtcmHeader* mtcmHeader = (MarMtcmHeader*)mtcm;
+
+    uint8_t* mtcmArchive = &mtcm[mtcmHeader->archiveOffset];
+
+    std::vector<float> aniData;
+    std::vector<noeKeyFramedBone_t> kfBones;
+    std::vector <std::vector<noeKeyFrameData_t>> kfData;
+
+    for (int j = 0; j < mtcmHeader->numJoints; j++) {
+        std::vector<RotAnimation>  rot;
+        std::vector<MoveAnimation> trans;
+        std::vector<MoveAnimation> scale;
+
+        if (j == 0) {
+            uint16_t* moveBitstream = (uint16_t*)mtcmArchive;
+            trans = readMarMoveBitstream(moveBitstream, mtcmHeader->quatOffset[0], mtcmHeader->numFrames);
+        }
+
+        int boneID = j;
+        int size = determineMarArchiveSize(mtcm, j);
+        int rotOffset = mtcmHeader->quatOffset[j];
+        uint16_t* rotBitstream = (uint16_t*)&mtcmArchive[rotOffset * 2];
+
+        rot = readMarRotBitstream(rotBitstream, size, 4, mtcmHeader->numFrames);
+
+        noeKeyFramedBone_t kfBone = createKFBone(boneID, noeBones, numBones, mtcmHeader->numFrames, trans, rot, scale, aniData, kfData);
+        kfBones.push_back(kfBone);
+    }
+
+    if (aniData.empty()) return NULL;
+
+    std::string animName = intToHexString(mtcmHeader->name);
+    noeKeyFramedAnim_t kfAnim = createKFAnim((char*)animName.c_str(), noeBones, numBones, kfBones, aniData);
+
+    noesisAnim_t* anim = rapi->Noesis_AnimFromBonesAndKeyFramedAnim(noeBones, numBones, &kfAnim, true);
+    return anim;
+}
+
+inline
 void loadMotion(noeRAPI_t* rapi, BYTE* motionFile, modelBone_t* noeBones, int numBones)
 {
     MtarHeader* mtarHeader = (MtarHeader*)motionFile;
@@ -323,6 +463,29 @@ void loadMotion(noeRAPI_t* rapi, BYTE* motionFile, modelBone_t* noeBones, int nu
         uint8_t* thisMtcm = &motionFile[mtcmTable[i].mtcmOffset];
 
         noesisAnim_t* anim = bindMtcm(thisMtcm, boneTable, rapi, noeBones, numBones);
+        if (anim) animList.Append(anim);
+    }
+
+    noesisAnim_t* anims = rapi->Noesis_AnimFromAnimsList(animList, animList.Num());
+    rapi->rpgSetExData_AnimsNum(anims, 1);
+}
+
+inline
+void loadMarMotion(noeRAPI_t* rapi, BYTE* motionFile, modelBone_t* noeBones, int numBones)
+{
+    MarHeader* marHeader = (MarHeader*)motionFile;
+
+    if (marHeader->maxJoint > numBones) return;
+
+    uint8_t* mtcm = (uint8_t*)&motionFile[marHeader->mtcmOffset];
+    MtarData* mtcmTable = (MtarData*)&motionFile[0x10];
+
+    CArrayList<noesisAnim_t*> animList;
+
+    for (int i = 0; i < marHeader->numMotion; i++) {
+        uint8_t* thisMtcm = &mtcm[mtcmTable[i].mtcmOffset];
+
+        noesisAnim_t* anim = bindMarMtcm(thisMtcm, rapi, noeBones, numBones);
         if (anim) animList.Append(anim);
     }
 
