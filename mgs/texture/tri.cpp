@@ -85,7 +85,7 @@ void Tri::initMemory()
 }
 
 uint8_t extendAlpha(uint8_t a) {
-	return uint8_t((a / 80) * 255);
+	return uint8_t((a / 0x80) * 255);
 }
 
 uint8_t* Tri::paintPixels(TriColour* clut, uint8_t* pixels, int width, int height, int maxWidth, int& size, int16_t xOffset, int16_t yOffset)
